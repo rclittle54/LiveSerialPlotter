@@ -8,7 +8,7 @@ Live Serial Plotter
 @author: ryanlittle
 """
 
-from tkinter import Tk, Label, StringVar, Button, OptionMenu, IntVar, Checkbutton, _setit, Canvas
+from tkinter import Tk, Label, StringVar, Button, OptionMenu, IntVar, Checkbutton, _setit
 import matplotlib
 matplotlib.use('TkAgg')
 from matplotlib import pyplot as plt
@@ -18,7 +18,8 @@ import datetime
 import time
 import serial
 import numpy as np
-#import glob
+import sys
+import glob
 
 
 NPOINTS = 10000 # Number of points to store
@@ -27,8 +28,26 @@ TIMEDELAY = 10 # Milliseconds
 PLOTRATIO = (5,3)
 PLOTDPI = 100
 
+# =============================================================================
+# Prints a message with the timestamp.
+def tprint(message):
+    print("| %s | %s"%(time.strftime("%H:%M:%S"),message))
+    return
+# =============================================================================
+
+# =============================================================================
+# This function comes graciously from StackOverflow
+# Finds all available serial ports, and returns as a list.
 def FindAllSerialPorts():
-    ports = ["COM%d"%(i+1) for i in range(256)]
+    if sys.platform.startswith('win'):
+        ports = ['COM%s' % (i + 1) for i in range(256)]
+    elif sys.platform.startswith('linux') or sys.platform.startswith('cygwin'):
+        # this excludes your current terminal "/dev/tty"
+        ports = glob.glob('/dev/tty[A-Za-z]*')
+    elif sys.platform.startswith('darwin'):
+        ports = glob.glob('/dev/tty.*')
+    else:
+        raise EnvironmentError('Unsupported platform')
     result = []
     for port in ports:
         try:
@@ -38,8 +57,10 @@ def FindAllSerialPorts():
         except:
             continue
     return result
-
-
+# =============================================================================
+    
+# =============================================================================
+# Closes all serial ports.
 def CloseAllSerialPorts():
     ports = FindAllSerialPorts()
     for p in ports:
@@ -48,32 +69,32 @@ def CloseAllSerialPorts():
         except:
             continue
     return
-
+# =============================================================================
         
-
+# =============================================================================
+# Main GUI window class.
 class PlotterWindow():
     def __init__(self,master):
-        self.master = master
-        master.title("Live Serial Plotter")
-        self.master.resizable(False,False)
         
+        # Tkinter parts
+        self.master = master
+        self.master.title("Live Serial Plotter")
+        self.master.resizable(False,False) # Prevent resizing
+        
+        # Serial parts
         self.ser = None
         self.IS_SERIAL_CONNECTED = False
-        
         self.serial_data = [[0 for i in range(MAXINPUTS)] for i in range(NPOINTS)]
         self.serial_plotline = []
         
         # Figure
-        LCOL = 0
         self.f1 = plt.figure(figsize=PLOTRATIO,dpi=PLOTDPI)
         self.a1 = self.f1.add_subplot(111)
         self.a1.grid()
         self.a1.set_title("Serial Values")
         self.a1.set_xticklabels([])
         self.canvas1 = FigureCanvasTkAgg(self.f1,master)
-        self.canvas1.get_tk_widget().grid(row=0,column=LCOL+0,columnspan=6,pady=20)
-        plt.subplots_adjust(bottom=0.15)
-        
+        self.canvas1.get_tk_widget().grid(row=0,column=0,columnspan=6,pady=20)
         
         # Labels
         self.npointslabel = Label(master,text='# Points')
@@ -105,20 +126,19 @@ class PlotterWindow():
         self.packageindicator.set(".")
         
         # OptionMenu lists
-        _npoints_list = [10,25,50,75,100,250,500,750,1000]
-        #_npoints_list = [25,50,100,250,500,1000]
-        npoints_list = [str(x) for x in _npoints_list]
+        _npoints_list = [10,25,50,75,100,250,500,750,1000] # Desired points
+        npoints_list = [str(x) for x in _npoints_list] # Converting each of these to a string
         available_ports = FindAllSerialPorts()
         
-        if len(available_ports) == 0:
-            print("Warning: no available ports!")
+        if len(available_ports) == 0: # If there are no available ports, print a warning
+            tprint("> Warning: no available ports!")
             available_ports.append('None')
         
         _baud_rates = [110, 300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200, 128000, 256000]
         baud_rates = [str(x) for x in _baud_rates]
         input_num_options = [str(x) for x in range(1,MAXINPUTS+1)]
         
-        plotmethods = ['Markers only','Line only','Both']
+        plotmethods = ['Markers only','Line only','Both'] # Various ways to display the plotted values
         
         # StringVars
         self.npointsentrystr = StringVar(master,value="250")
@@ -127,7 +147,6 @@ class PlotterWindow():
         self.plotmethodentrystr = StringVar(master,value=plotmethods[1])
         self.numinputsentrystr = StringVar(master,value="1")
         
-
         # Using OptionMenu instead:
         self.plotmethodoptionmenu = OptionMenu(master,self.plotmethodentrystr,*plotmethods)
         self.plotmethodoptionmenu.grid(row=4,column=2)
@@ -161,7 +180,6 @@ class PlotterWindow():
         self.refreshserialbutton = Button(master,text='Refresh Ports',command=self.RefreshSerial)
         self.refreshserialbutton.grid(row=3,column=2)
         
-        
         self.exportdatabutton = Button(master,text='Export',command=self.ExportData)
         self.exportdatabutton.grid(row=4,column=3)
         
@@ -169,18 +187,22 @@ class PlotterWindow():
         self.printrawbutton = Checkbutton(master,text='Print raw data',variable=self.printrawdata,onvalue=1,offvalue=0)
         self.printrawbutton.grid(row=2,column=2)
         
-        
         self.requirebrackets = IntVar(master,value=1)
         self.requirebracketsbutton = Checkbutton(master,text='Require brackets',variable=self.requirebrackets,onvalue=1,offvalue=0)
         self.requirebracketsbutton.grid(row=3,column=5)
+        # =====================================================================
         
         
-        
-        
+    # =========================================================================
+    # Runs the main loop for Tk().
     def mainloop(self):
         self.master.mainloop()
         return
+    # =========================================================================
     
+    """
+    # =========================================================================
+    # Resizes the window. I believe this is obsolete
     def resize(self,event):
         w = max(event.width,500)
         h = max(event.height,300)
@@ -188,38 +210,43 @@ class PlotterWindow():
         self.canvas1.draw()
         
         return
+    # =========================================================================
+    """
     
-    
-    
+    # =========================================================================
+    # Connects GUI to a COM port based on the user selected port.
     def ConnectToSerial(self):
         try:
             port = self.portentrystr.get()
             baudrate = int(self.baudrateentrystr.get())
-            print("Trying to connect to %s at %d"%(port,baudrate))
+            tprint("> Trying to connect to %s at %d"%(port,baudrate))
             self.ser = serial.Serial(port,baudrate,timeout=0.1)
             self.ser.flushInput()
-            
-            
         except:
-            print("Error")
+            tprint("> Error")
             self.ToggleSerialConnectedLabel(False)
             return -1
         
-        print("Success.")
-        
-        self.IS_SERIAL_CONNECTED = True
-        self.ToggleSerialConnectedLabel(True)
-        self.GetSerialValue()
-        
-        
+        tprint("> Success.")
+        self.IS_SERIAL_CONNECTED = True # Set GUI state
+        self.ToggleSerialConnectedLabel(True) # Show the state
+        self.GetSerialValue() # Begin the GetSerialValue() loop
         return
+    # =========================================================================
     
+    # =========================================================================
+    # Disconnects from whatever serial port is currently active.
     def DisconnectFromSerial(self):
-        self.ser.close()
-        self.ToggleSerialConnectedLabel(False)
-        self.IS_SERIAL_CONNECTED = False
+        if self.IS_SERIAL_CONNECTED: # Only do this if already connected.
+            self.ser.close()
+            self.ToggleSerialConnectedLabel(False)
+            self.IS_SERIAL_CONNECTED = False
         return
-
+    # =========================================================================
+    
+    """
+    # =========================================================================
+    # Clears the plot window. I believe this is obsolete.
     def ClearPlotWindow(self):
         ylim = self.a1.get_ylim()
         xlim = self.a1.get_xlim()
@@ -229,30 +256,30 @@ class PlotterWindow():
         self.a1.set_xlim(xlim)
         self.canvas1.draw()
         return
-        
+    # =========================================================================
+    """
     
+    # =========================================================================
+    # Refreshes the list of available serial ports on the option menu.
     def RefreshSerial(self):
         new_serial_list = FindAllSerialPorts()
         
-        print("Refreshing serial port list:")
+        tprint("> Refreshing serial port list")
         if len(new_serial_list) == 0:
-            print("No available serial ports.")
+            tprint("> No available serial ports.")
             return
         
-        # Set the variable to none
-        self.portentrystr.set(new_serial_list[-1])
-        
-        # Delete the old list
-        self.portoptionmenu['menu'].delete(0,'end')
-        
-        # Refresh:
-        for port in new_serial_list:
-            self.portoptionmenu['menu'].add_command(label=port, command=_setit(self.portentrystr,port))
-            
+        self.portentrystr.set(new_serial_list[-1]) # Set the variable to none
+        self.portoptionmenu['menu'].delete(0,'end') # Delete the old list
+
+        for port in new_serial_list: # Refresh:
+            self.portoptionmenu['menu'].add_command(label=port, command=_setit(self.portentrystr,port)) 
         return
+    # =========================================================================
     
+    # =========================================================================
+    # Exports the data to a file associated with the current date and time.
     def ExportData(self):
-        
         timestamp = datetime.datetime.now().strftime('%y%m%d_%H%M%S')
         outfname = 'SessionLogs/SerialSessionLog_%s.csv'%(timestamp)
         try:
@@ -272,14 +299,15 @@ class PlotterWindow():
                     wstr += '%f,'%(d)
                 wstr = wstr[:-1] +'\n'
                 f.write(wstr)
-                
-                
             f.close()
-            print("Successfully exported to %s"%(outfname))
+            tprint("> Successfully exported to %s"%(outfname))
         except:
-            print("Error: Unable to export data")
+            tprint("> Error: Unable to export data")
         return
+    # =========================================================================
 
+    # =========================================================================
+    # Changes the "good data received" indicator.
     def SetPackageIndicator(self,state):
         if state == 'good':
             self.packageindicator.set("!")
@@ -288,10 +316,13 @@ class PlotterWindow():
             self.packageindicator.set('.')
             self.packageindicatorlabel.config(fg='black',font=('times',20,'bold'))
         return
-
+    # =========================================================================
+    
+    # =========================================================================
+    # Gets the most recent serial value from connection. IMPORTANT.
     def GetSerialValue(self):
         if not self.IS_SERIAL_CONNECTED:
-            print("No connection")
+            tprint("> No connection")
             return
         
         try:
@@ -299,14 +330,13 @@ class PlotterWindow():
             rawdata = self.ser.readline().decode('utf8')
             if rawdata != '':
                 self.currentvalstringvar.set(str(rawdata[:-1]))
-            self.ser.flushInput()
-            self.ser.flushOutput()
+            self.ser.flushInput() # Clear this out to avoid garbage data
+            self.ser.flushOutput()# Clear this out to avoid garbage data
             
             # Parse data
             x_nonewline = rawdata[:-1] # Ignore the trailing newline
-            if self.printrawdata.get():
-                print(x_nonewline)
-            
+            if self.printrawdata.get(): # Print the raw data, if desired
+                print(x_nonewline) 
             
             if self.requirebrackets.get():
                 if ">" in x_nonewline and "<" in x_nonewline:
@@ -330,13 +360,11 @@ class PlotterWindow():
                         # Set the blinker indicator to green!
                         self.SetPackageIndicator('good')
                         
-                        self.master.after_idle(self.Plotline)
+                        self.master.after_idle(self.Plotline) # Once everything's done, plot it!
                     except ValueError:
-                        print("Invalid serial value: Non-floating point detected: %s"%(x))
+                        tprint("> Invalid serial value: Non-floating point detected: %s"%(x))
                         
                 else:
-                    # Set the blinker indicator to dark grey
-                    #print("Warning! Bad package received!")
                     self.SetPackageIndicator('bad')
             else:
                 x = x_nonewline 
@@ -356,19 +384,19 @@ class PlotterWindow():
                     self.serial_plotline = self.serial_data[-npoints:]
                     self.master.after_idle(self.Plotline)
                 except ValueError:
-                    print("Invalid serial value: Non-floating point detected: %s"%(x))
+                    tprint("> Invalid serial value: Non-floating point detected: %s"%(x))
                     
                     
         except Exception as e:
-            print("Error in GetSerialValue()",e)
+            tprint("> Error in GetSerialValue()",e)
             
-        self.master.after(TIMEDELAY,self.GetSerialValue)
+        self.master.after(TIMEDELAY,self.GetSerialValue) # Do it all again: Here's making it the loop
         return
+    # =========================================================================
     
-    
-    
+    # =========================================================================
+    # Plots the data to the GUI's plot window.
     def Plotline(self):
-        
         numpoints = int(self.npointsentrystr.get())
         numinputs = int(self.numinputsentrystr.get())
         
@@ -380,31 +408,28 @@ class PlotterWindow():
             plotmethod = '.-'
         self.a1.clear()   
         
-        
-        for i in range(numinputs):
+        for i in range(numinputs): # Plot each line individually
             plotline = [x[i] for x in self.serial_plotline]
             self.a1.plot(plotline,plotmethod,label=str(i))
-        
-        
-            
+    
         self.a1.grid()
         if self.show_x_axis.get():
             self.a1.set_ylim(0,1.125*np.amax(np.array(self.serial_data)))
         
-        
+        # Plot formatting parameters
         ticklabels = np.linspace(numpoints/10,0,5)
         self.a1.set(xticks=np.linspace(0,numpoints,5),xticklabels=ticklabels)
-        #self.a1.set_xlabel("Time (s)")
         self.a1.set_xticklabels([])
         self.a1.set_ylabel("Serial Value")
         self.a1.legend(loc=3)
         self.a1.set_title("Serial Values")
-        
-        
-            
-        self.canvas1.draw()
-        return
     
+        self.canvas1.draw() # Actually update the GUI's canvas object
+        return
+    # =========================================================================
+    
+    # =========================================================================
+    # Swap out the string label indicating whether serial is connected.
     def ToggleSerialConnectedLabel(self,connection):
         if connection:
             self.serialconnectedstringvar.set('Connected')
@@ -413,10 +438,14 @@ class PlotterWindow():
             self.serialconnectedstringvar.set('Unconnected')
             self.serialconnectedlabel.config(fg='red')
         return
+    # =========================================================================
+# =============================================================================
 
-
+# Do everything if this is running itself.
 if __name__ == "__main__":
+    tprint("> Running.")
     root = Tk()
     useGUI = PlotterWindow(root)
     useGUI.mainloop()
     CloseAllSerialPorts()
+tprint("> Quitting.")
