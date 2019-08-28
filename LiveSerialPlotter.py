@@ -92,16 +92,17 @@ class PlotterWindow():
         self.numinputslabel = Label(master,text="# Inputs")
         self.numinputslabel.grid(row=4,column=0,sticky='W')
         
-        self.currentvallabel = Label(master,text="Current Data:")
+        self.currentvallabel = Label(master,text="Most recent:")
         self.currentvallabel.grid(row=1,column=5)
         
         self.currentvalstringvar = StringVar(master,value='None')
         self.currentval = Label(master,textvar=self.currentvalstringvar)
         self.currentval.grid(row=2,column=5)
         
-        self.packageindicator = StringVar(master,value='.')
+        self.packageindicator = StringVar(master,value='!')
         self.packageindicatorlabel = Label(master,textvar=self.packageindicator,font=('times',20,'bold'))
         self.packageindicatorlabel.grid(row=4,column=5)
+        self.packageindicator.set(".")
         
         # OptionMenu lists
         _npoints_list = [10,25,50,75,100,250,500,750,1000]
@@ -296,6 +297,8 @@ class PlotterWindow():
         try:
             # Read data
             rawdata = self.ser.readline().decode('utf8')
+            if rawdata != '':
+                self.currentvalstringvar.set(str(rawdata[:-1]))
             self.ser.flushInput()
             self.ser.flushOutput()
             
@@ -319,7 +322,7 @@ class PlotterWindow():
                             except:
                                 senddata.append(self.serial_data[-1][i]) # Append the most recent value
                         
-                        self.currentvalstringvar.set(str(rawdata))
+                        
                         self.serial_data.append(senddata)
                         self.serial_data = self.serial_data[1:]
                         self.serial_plotline = self.serial_data[-npoints:]
@@ -348,7 +351,6 @@ class PlotterWindow():
                         except:
                             senddata.append(self.serial_data[-1][i]) # Append the most recent value
                     
-                    self.currentvalstringvar.set(str(rawdata))
                     self.serial_data.append(senddata)
                     self.serial_data = self.serial_data[1:]
                     self.serial_plotline = self.serial_data[-npoints:]
@@ -392,7 +394,7 @@ class PlotterWindow():
         
         ticklabels = np.linspace(numpoints/10,0,5)
         self.a1.set(xticks=np.linspace(0,numpoints,5),xticklabels=ticklabels)
-        self.a1.set_xlabel("Time (s)")
+        #self.a1.set_xlabel("Time (s)")
         self.a1.set_xticklabels([])
         self.a1.set_ylabel("Serial Value")
         self.a1.legend(loc=3)
