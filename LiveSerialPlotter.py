@@ -200,19 +200,6 @@ class PlotterWindow():
         return
     # =========================================================================
     
-    """
-    # =========================================================================
-    # Resizes the window. I believe this is obsolete
-    def resize(self,event):
-        w = max(event.width,500)
-        h = max(event.height,300)
-        self.f1.set_size_inches(w/100, (h-64)/100)
-        self.canvas1.draw()
-        
-        return
-    # =========================================================================
-    """
-    
     # =========================================================================
     # Connects GUI to a COM port based on the user selected port.
     def ConnectToSerial(self):
@@ -243,21 +230,6 @@ class PlotterWindow():
             self.IS_SERIAL_CONNECTED = False
         return
     # =========================================================================
-    
-    """
-    # =========================================================================
-    # Clears the plot window. I believe this is obsolete.
-    def ClearPlotWindow(self):
-        ylim = self.a1.get_ylim()
-        xlim = self.a1.get_xlim()
-        self.a1.clear()
-        self.a1.grid()
-        self.a1.set_ylim(ylim)
-        self.a1.set_xlim(xlim)
-        self.canvas1.draw()
-        return
-    # =========================================================================
-    """
     
     # =========================================================================
     # Refreshes the list of available serial ports on the option menu.
