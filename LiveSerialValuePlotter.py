@@ -18,18 +18,36 @@ import datetime
 import serial
 import numpy as np
 import glob
+import time
 
 
 NPOINTS = 10000 # Number of points to store
 MAXINPUTS = 5
 TIMEDELAY = 10 # Milliseconds
-PLOTRATIO = (5,3)
+PLOTRATIO = (5.82,3)
 PLOTDPI = 100
 
+PRINTDEBUG = False
+
 def FindAllSerialPorts():
+    if PRINTDEBUG: print("\t- Finding all serial ports")
+    
     ports = glob.glob('/dev/cu.*')
+    
+    if PRINTDEBUG: print("\t\t- Finished globbing, checking ports")
+    
+    exclusionlist = ['/dev/cu.RyansPowerbeats3-SPPSer',
+                     '/dev/cu.RyansPowerbeats3-Wirele-1',
+                     '/dev/cu.Maker-1F97-RN-iAP-2',
+                     '/dev/cu.RyansPowerbeats3-Wirele',
+                     '/dev/cu.RyansPowerbeats3-SPPSer-1']
     result = []
+    counter = 0
     for port in ports:
+        if port in exclusionlist:
+            continue
+        counter += 1
+        if PRINTDEBUG: print("\t\t\t- Checking #%d: %s"%(counter,port))
         try:
             s = serial.Serial(port)
             s.close()
@@ -42,8 +60,10 @@ def FindAllSerialPorts():
 
 class PlotterWindow():
     def __init__(self,master):
+        if PRINTDEBUG: print("\t- Top of init")
         self.master = master
         master.title("Live Serial Plotter")
+        self.master.bind("<Configure>",self.resize)
         
         self.ser = None
         self.IS_SERIAL_CONNECTED = False
@@ -51,9 +71,19 @@ class PlotterWindow():
         self.serial_data = [[0 for i in range(MAXINPUTS)] for i in range(NPOINTS)]
         self.serial_plotline = []
         
+        
+        # Configuring to allow expansion
+        for i in range(4):
+            self.master.columnconfigure(i,weight=1)
+            
+        for i in range(5):
+            self.master.rowconfigure(i,weight=1)
+        
+        
+        
         #self.derivative_data = [0 for i in range(NPOINTS)]
         #self.derivative_plotline = []
-        
+        if PRINTDEBUG: print("\t- Loading figures")
         # Figure
         LCOL = 0
         #RCOL = 0
@@ -62,8 +92,9 @@ class PlotterWindow():
         self.a1.grid()
         self.a1.set_title("Serial Values")
         self.canvas1 = FigureCanvasTkAgg(self.f1,master)
-        self.canvas1.get_tk_widget().grid(sticky='W',row=0,column=LCOL+0,columnspan=4)
+        self.canvas1.get_tk_widget().grid(sticky='W',row=0,column=LCOL+0,columnspan=5)
         
+        if PRINTDEBUG: print("\t- Loading labels")
         # Labels
         self.npointslabel = Label(master,text='# Points')
         self.npointslabel.grid(row=1,column=0,sticky='W')
@@ -81,7 +112,7 @@ class PlotterWindow():
         self.numinputslabel = Label(master,text="# Inputs")
         self.numinputslabel.grid(row=4,column=0,sticky='W')
         
-        
+        if PRINTDEBUG: print("\t- Loading optionmenu lists")
         # OptionMenu lists
         _npoints_list = [10,25,50,75,100,250,500,750,1000]
         #_npoints_list = [25,50,100,250,500,1000]
@@ -93,6 +124,7 @@ class PlotterWindow():
         
         plotmethods = ['Markers only','Line only','Both']
         
+        if PRINTDEBUG: print("\t- Loading stringvars")
         # StringVars
         self.npointsentrystr = StringVar(master,value="250")
         self.baudrateentrystr = StringVar(master,value="115200")
@@ -100,7 +132,8 @@ class PlotterWindow():
         self.plotmethodentrystr = StringVar(master,value=plotmethods[1])
         self.numinputsentrystr = StringVar(master,value="1")
         
-
+        
+        if PRINTDEBUG: print("\t- Loading optionmenus")
         # Using OptionMenu instead:
         self.plotmethodoptionmenu = OptionMenu(master,self.plotmethodentrystr,*plotmethods)
         self.plotmethodoptionmenu.grid(row=4,column=2)
@@ -119,7 +152,7 @@ class PlotterWindow():
         self.numinputsoptionmenu.grid(row=4,column=1,sticky='W')
         
         
-        
+        if PRINTDEBUG: print("\t- Loading buttons")
         # Buttons
 #        self.show_plot_line = IntVar(master,value=1)
 #        self.showplotlinecheckbutton = Checkbutton(master,text='Show line',variable=self.show_plot_line,onvalue=1,offvalue=0)
@@ -153,6 +186,8 @@ class PlotterWindow():
         self.printrawbutton = Checkbutton(master,text='Print raw data',variable=self.printrawdata,onvalue=1,offvalue=0)
         self.printrawbutton.grid(row=2,column=2)
         
+        if PRINTDEBUG: print("\t- Bottom of init")
+        
         
         
     def mainloop(self):
@@ -160,6 +195,16 @@ class PlotterWindow():
         return
     
     
+    def resize(self,event):
+        w = self.master.winfo_width()
+        h = self.master.winfo_height()
+        neww = (w-20)/100
+        newh = (h-96)/100
+        print(self.f1.get_size_inches()*self.f1.dpi)
+        self.f1.set_size_inches(neww,newh)
+        self.canvas1.draw()
+        
+        return
     
     
     
@@ -185,6 +230,8 @@ class PlotterWindow():
         
         
         return
+    
+    
     
     def DisconnectFromSerial(self):
         self.ser.close()
@@ -361,6 +408,8 @@ class PlotterWindow():
         self.canvas1.draw()
         return
     
+    
+    
     def ToggleSerialConnectedLabel(self,connection):
         if connection:
             self.serialconnectedstringvar.set('Connected')
@@ -371,10 +420,17 @@ class PlotterWindow():
         return
 
 
+
+
+
 if __name__ == "__main__":
+    print("> Running.\t\t- %s"%(time.strftime("%H:%M:%S")))
     root = Tk()
+    print("> Root initialized.\t- %s"%(time.strftime("%H:%M:%S")))
     useGUI = PlotterWindow(root)
+    print("> GUI initialized.\t- %s"%(time.strftime("%H:%M:%S")))
     useGUI.mainloop()
+    print("> Quitting.\t\t- %s"%(time.strftime("%H:%M:%S")))
     
     
 
