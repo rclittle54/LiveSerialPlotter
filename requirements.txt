@@ -1,3 +1,4 @@
+black 
 matplotlib
 numpy
 tk
