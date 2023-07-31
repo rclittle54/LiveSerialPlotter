@@ -12,6 +12,7 @@ import logging
 import sys
 import tkinter
 
+from LiveDataSource import LiveDataSource
 from PlotterWindow import PlotterWindow
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,8 @@ def main():
 
     logger.debug("Running.")
 
-    pw = PlotterWindow(tkinter.Tk(), args)
+    pw = PlotterWindow(args)
+    LiveDataSource(args, pw)
     pw.mainloop()
 
     logger.debug("Quitting.")

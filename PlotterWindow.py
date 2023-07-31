@@ -13,13 +13,13 @@ from matplotlib import pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
 import sys
-from tkinter import Tk, Label, StringVar, Button, OptionMenu, IntVar, Checkbutton, _setit
+from tkinter import Tk, Label, StringVar, Button, OptionMenu, IntVar, Checkbutton
 
 from LiveDataSource import LiveDataSource
 
 logger = logging.getLogger(__name__)
 
-TIMEDELAY = 100  # Milliseconds between getting new data/updating plot
+TIMEDELAY = 100  # Milliseconds between updating plot
 PLOTRATIO = (9, 6)
 PLOTDPI = 100
 
@@ -27,14 +27,14 @@ PLOTDPI = 100
 # =============================================================================
 # Main GUI window class.
 class PlotterWindow:
-    def __init__(self, master: Tk, args: Namespace):
-        # Tkinter parts
+    def __init__(self, args: Namespace):
+        master = Tk()
         self.master = master
         self.master.title("Live Serial Plotter")
         self.master.resizable(False, False)  # Prevent resizing
 
-        self.datasource = LiveDataSource(master, args)
-        self.args = args
+        # The data, kept up-to-date by the LiveDataSource
+        self.data = [[0 for i in range(args.max_inputs)] for i in range(args.max_points)]
 
         # set up a close window handler
         master.protocol("WM_DELETE_WINDOW", self.die)
@@ -76,21 +76,11 @@ class PlotterWindow:
         self.packageindicatorlabel = Label(master, textvar=self.packageindicator, font=("times", 20, "bold"))
         self.packageindicatorlabel.grid(row=4, column=5)
         self.packageindicator.set(".")
-        self.datasource.packageindicator = packageindicator
 
-        # OptionMenu lists
-        _npoints_list = [10, 25, 50, 75, 100, 250, 500, 750, 1000]  # Desired points
-        npoints_list = [str(x) for x in _npoints_list]  # Converting each of these to a string
-        available_ports = self.datasource.findAllSerialPorts()
-
-        if len(available_ports) == 0:  # If there are no available ports, print a warning
-            logger.warning("No available ports!")
-            available_ports.append("None")
-
-        _baud_rates = [110, 300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200, 128000, 256000]
-        baud_rates = [str(x) for x in _baud_rates]
+        npoints_list = [str(x) for x in [10, 25, 50, 75, 100, 250, 500, 750, 1000]]
+        available_ports = ["unk"]
+        baud_rates = ["unk"]
         input_num_options = [str(x) for x in range(1, args.max_inputs + 1)]
-
         plotmethods = ["Markers only", "Line only", "Both"]  # Various ways to display the plotted values
 
         # StringVars
@@ -122,22 +112,20 @@ class PlotterWindow:
         self.showxaxischeckbutton = Checkbutton(master, text="Show y=0", variable=self.show_x_axis, onvalue=1, offvalue=0)
         self.showxaxischeckbutton.grid(row=1, column=2)
 
-        self.connectbutton = Button(master, text="Connect", command=self.datasource.connectToSerial)
+        self.connectbutton = Button(master, text="Connect", command=None)
         self.connectbutton.grid(row=2, column=3)
 
-        self.disconnectbutton = Button(master, text="Disconnect", command=self.datasource.disconnectFromSerial)
+        self.disconnectbutton = Button(master, text="Disconnect", command=None)
         self.disconnectbutton.grid(row=3, column=3)
 
-        self.refreshserialbutton = Button(master, text="Refresh Ports", command=self.datasource.refreshSerial)
+        self.refreshserialbutton = Button(master, text="Refresh Ports", command=None)
         self.refreshserialbutton.grid(row=3, column=2)
 
-        self.exportdatabutton = Button(master, text="Export", command=self.datasource.exportData)
+        self.exportdatabutton = Button(master, text="Export", command=None)
         self.exportdatabutton.grid(row=4, column=3)
 
         self.printrawdata = IntVar(master, value=0)
-        self.printrawbutton = Checkbutton(
-            master, text="Print raw data", variable=self.datasource.printRawData, onvalue=1, offvalue=0
-        )
+        self.printrawbutton = Checkbutton(master, text="Print raw data", variable=self.printrawdata, onvalue=1, offvalue=0)
         self.printrawbutton.grid(row=2, column=2)
 
         self.requirebrackets = IntVar(master, value=1)
@@ -173,13 +161,14 @@ class PlotterWindow:
             plotmethod = ".-"
         self.a1.clear()
 
+        serial_plotline = self.data[-numpoints:]
         for i in range(numinputs):  # Plot each line individually
-            plotline = [x[i] for x in self.datasource.serial_plotline]
+            plotline = [x[i] for x in serial_plotline]
             self.a1.plot(plotline, plotmethod, label=str(i))
 
         self.a1.grid()
         if self.show_x_axis.get():
-            self.a1.set_ylim(0, 1.125 * np.amax(np.array(self.serial_data)))
+            self.a1.set_ylim(0, 1.125 * np.amax(np.array(serial_data)))
 
         # Plot formatting parameters
         ticklabels = np.linspace(numpoints / 10, 0, 5)
@@ -192,15 +181,3 @@ class PlotterWindow:
         self.canvas1.draw()  # Actually update the GUI's canvas object
         # Schedule the next execution of plotter
         self.master.after(TIMEDELAY, self.plotline)
-        return
-
-    # =========================================================================
-    # Swap out the string label indicating whether serial is connected.
-    def toggleSerialConnectedLabel(self, connection):
-        if connection:
-            self.serialconnectedstringvar.set("Connected")
-            self.serialconnectedlabel.config(fg="green")
-        else:
-            self.serialconnectedstringvar.set("Unconnected")
-            self.serialconnectedlabel.config(fg="red")
-        return

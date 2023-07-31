@@ -9,23 +9,34 @@ from argparse import Namespace
 import datetime
 import glob
 import logging
+import numpy as np
 import serial
 import sys
-from tkinter import Tk
 
 logger = logging.getLogger(__name__)
 
-TIMEDELAY = 100  # Milliseconds between getting new data/updating plot
+TIMEDELAY = 100  # Milliseconds between getting new data
+
 
 class LiveDataSource:
-    def __init__(self, master: Tk, args: Namespace):
+    def __init__(self, args: Namespace, window):
         self.ser = None
-        self.master = master
+        self.master = window.master
+        self.window = window
         self.IS_SERIAL_CONNECTED = False
-        self.data = [[0 for i in range(args.max_inputs)] for i in range(args.max_points)]
-        self.serial_plotline = []
-        self.ports = []
         self.printRawData = False
+
+        self.refreshSerial()
+        menu = self.window.baudrateoptionmenu["menu"]
+        menu.delete(0, "end")
+        baud_rates = [110, 300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200, 128000, 256000]
+        for v in baud_rates:
+            menu.add_command(label=str(v), command=lambda value=str(v): self.om_variable.set(value))
+
+        self.window.connectbutton["command"] = self.connectToSerial
+        self.window.disconnectbutton["command"] = self.disconnectFromSerial
+        self.window.refreshserialbutton["command"] = self.refreshSerial
+        self.window.exportdatabutton["command"] = self.exportData
 
     # =============================================================================
     # This function comes graciously from StackOverflow
@@ -60,53 +71,61 @@ class LiveDataSource:
                 p.close()
             except:
                 continue
-        return
+        self.IS_SERIAL_CONNECTED = False
 
     # =========================================================================
     # Connects GUI to a COM port based on the user selected port.
     def connectToSerial(self):
         try:
-            port = self.portentrystr.get()
-            baudrate = int(self.baudrateentrystr.get())
+            port = self.window.portentrystr.get()
+            baudrate = int(self.window.baudrateentrystr.get())
             logger.debug("Connecting to %s at %d" % (port, baudrate))
             self.ser = serial.Serial(port, baudrate, timeout=0.1)
             self.ser.flushInput()
         except:
-            logger.warn("Error")
-            self.ToggleSerialConnectedLabel(False)
+            logger.warn(f"Could not connect to {port}")
+            self.toggleSerialConnectedLabel(False)
             return -1
 
         self.IS_SERIAL_CONNECTED = True  # Set GUI state
-        self.ToggleSerialConnectedLabel(True)  # Show the state
-        self.GetSerialValue()  # Begin the GetSerialValue() loop
+        self.toggleSerialConnectedLabel(True)  # Show the state
+        self.getSerialValue()
         logger.debug("Connected")
-        return
 
     # =========================================================================
     # Disconnects from whatever serial port is currently active.
     def disconnectFromSerial(self):
         if self.IS_SERIAL_CONNECTED:  # Only do this if already connected.
             self.ser.close()
-            self.ToggleSerialConnectedLabel(False)
+            self.toggleSerialConnectedLabel(False)
             self.IS_SERIAL_CONNECTED = False
-        return
+
+    # =========================================================================
+    # Swap out the string label indicating whether serial is connected.
+    def toggleSerialConnectedLabel(self, connection):
+        if connection:
+            self.window.serialconnectedstringvar.set("Connected")
+            self.window.serialconnectedlabel.config(fg="green")
+        else:
+            self.window.serialconnectedstringvar.set("Unconnected")
+            self.window.serialconnectedlabel.config(fg="red")
 
     # =========================================================================
     # Refreshes the list of available serial ports on the option menu.
     def refreshSerial(self):
-        new_serial_list = findAllSerialPorts()
+        new_serial_list = self.findAllSerialPorts()
 
         logger.info("Refreshing serial port list")
         if len(new_serial_list) == 0:
             logger.warn("No available serial ports.")
             return
 
-        self.portentrystr.set(new_serial_list[-1])  # Set the variable to none
-        self.portoptionmenu["menu"].delete(0, "end")  # Delete the old list
+        self.window.portentrystr.set(new_serial_list[-1])  # Set the variable to none
+        self.window.portoptionmenu["menu"].delete(0, "end")  # Delete the old list
 
-        for port in new_serial_list:  # Refresh:
-            self.portoptionmenu["menu"].add_command(label=port, command=_setit(self.portentrystr, port))
-        return
+        for port in new_serial_list:
+            logger.debug(f"Adding {port}")
+            self.window.portoptionmenu["menu"].add_command(label=port, command=lambda v=port: self.om_variable.set(v))
 
     # =========================================================================
     # Exports the data to a file associated with the current date and time.
@@ -139,12 +158,11 @@ class LiveDataSource:
     # Changes the "good data received" indicator.
     def setPackageIndicator(self, state):
         if state == "good":
-            self.packageindicator.set("!")
-            self.packageindicatorlabel.config(fg="green", font=("times", 20, "bold"))
+            self.window.packageindicator.set("!")
+            self.window.packageindicatorlabel.config(fg="green", font=("times", 20, "bold"))
         else:
-            self.packageindicator.set(".")
-            self.packageindicatorlabel.config(fg="black", font=("times", 20, "bold"))
-        return
+            self.window.packageindicator.set(".")
+            self.window.packageindicatorlabel.config(fg="black", font=("times", 20, "bold"))
 
     # =========================================================================
     # Gets the most recent serial value from connection. IMPORTANT.
@@ -154,61 +172,35 @@ class LiveDataSource:
             return
 
         # Schedule the next execution of this function
-        self.master.after(TIMEDELAY, self.GetSerialValue)
+        self.master.after(TIMEDELAY, self.getSerialValue)
 
         rawdata = self.ser.readline().decode("utf8").strip()
-        if len(rawdata) > 0:
-            try:
-                self.currentvalstringvar.set(str(rawdata))
-                if self.printRawData.get():
-                    logger.info(rawdata)
+        if len(rawdata) == 0:
+            return
+        if self.window.printrawdata.get():
+            logger.info(rawdata)
+        l = rawdata.rfind(">")
+        if l == -1:
+            logger.warning("No > delimiter")
+            self.setPackageIndicator("bad")
+            return
+        if self.window.requirebrackets.get():
+            r = rawdata.find("<")
+            if r == -1:
+                logger.warning("No < delimiter")
+                self.setPackageIndicator("bad")
+                return
+        else:
+            r = len(rawdata[l + 1 :])
+        splits = rawdata[l + 1 : r].split(" ")
+        logger.debug(f"splits:{splits}")
+        try:
+            splits = [float(v) for v in splits]
+        except ValueError:
+            logger.warning(f"Failed to convert {splits}")
+            self.setPackageIndicator("bad")
+            return
 
-                if self.requirebrackets.get():
-                    if ">" in rawdata and "<" in rawdata:
-                        x = rawdata[1:-2]
-                        try:
-                            npoints = int(self.npointsentrystr.get())
-                            x_split = x.split(" ")
-                            # Make sure that every data package is the same length, so it's not a sequence
-                            senddata = []
-                            for i in range(MAXINPUTS):
-                                try:
-                                    senddata.append(float(x_split[i]))
-                                except:
-                                    senddata.append(self.data[-1][i])  # Append the most recent value
+        self.setPackageIndicator("good")
 
-                            self.data.append(senddata)
-                            self.data = self.data[1:]
-                            self.serial_plotline = self.data[-npoints:]
-
-                            # Set the blinker indicator to green!
-                            self.SetPackageIndicator("good")
-
-                            self.master.after_idle(self.Plotline)  # Once everything's done, plot it!
-                        except ValueError:
-                            logger.warning("Invalid serial value: Non-floating point detected: %s" % (x))
-
-                    else:
-                        self.SetPackageIndicator("bad")
-                else:
-                    x = rawdata
-                    try:
-                        npoints = int(self.npointsentrystr.get())
-                        x_split = x.split(" ")
-                        # Make sure that every data package is the same length, so it's not a sequence
-                        senddata = []
-                        for i in range(self.args.max_inputs):
-                            try:
-                                senddata.append(float(x_split[i]))
-                            except:
-                                senddata.append(self.data[-1][i])  # Append the most recent value
-
-                        self.data.append(senddata)
-                        self.data = self.data[1:]
-                        self.serial_plotline = self.data[-npoints:]
-                        self.master.after_idle(self.Plotline)
-                    except ValueError:
-                        logger.warning("Invalid serial value: Non-floating point detected: %s" % (x))
-
-            except Exception as e:
-                logger.warning("Error in GetSerialValue()", e)
+        self.window.data.append(splits)
