@@ -1,23 +1,3 @@
-<<<<<<< HEAD
-================================================
-	Live Serial Plotter
--------------------
-Author: Ryan Little, 2019
-	Locomotor Control Systems Lab, UT Dallas
-================================================
-
-This is a program that will live plot data from serial connection.
-
-Format data as follows:
-
->##.##<
-
-Multiple values can be sent, space delimited, e.g.
-
->##.## ##.## ##.## ...<
-
-The carats are for packet verification.
-=======
 ==================================================
 Live Serial Plotter
 - Author: Ryan Little,
@@ -66,4 +46,3 @@ The following options are available for customization:
 	- Allows the user to specify if the data to look
 	  for will have package delimiting brackets or
 	  not.  
->>>>>>> d5ea80c066f67413016055daecdc1f3fb36c7be6
