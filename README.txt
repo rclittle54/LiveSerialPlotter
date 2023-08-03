@@ -45,4 +45,4 @@ The following options are available for customization:
 * Require brackets
 	- Allows the user to specify if the data to look
 	  for will have package delimiting brackets or
-	  not.  
+	  not.  Must be disconnected to change this.

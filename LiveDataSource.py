@@ -6,6 +6,7 @@ some np arrays up-to-date and also provides some tk callbacks to configure it.
 It accepts data from either a serial port or from a udp socket.
 """
 from argparse import Namespace
+import datetime
 import glob
 import logging
 import numpy as np
@@ -31,7 +32,22 @@ class LiveDataSource:
         self.refreshSerial()
         menu = self.window.baudrateoptionmenu["menu"]
         menu.delete(0, "end")
-        baud_rates = [110, 300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200, 128000, 256000]
+        baud_rates = [
+            110,
+            300,
+            600,
+            1200,
+            2400,
+            4800,
+            9600,
+            14400,
+            19200,
+            38400,
+            57600,
+            115200,
+            128000,
+            256000,
+        ]
         for v in baud_rates:
             menu.add_command(label=str(v), command=lambda value=str(v): self.om_variable.set(value))
 
@@ -43,7 +59,7 @@ class LiveDataSource:
         self.window.queue = queue
         self.io_thread = None
 
-        if args.connect:
+        if not args.no_connect:
             self.connectToSerial()
 
     # =============================================================================
@@ -138,7 +154,9 @@ class LiveDataSource:
 
         for port in new_serial_list:
             logger.debug(f"Adding {port}")
-            self.window.portoptionmenu["menu"].add_command(label=port, command=lambda v=port: self.om_variable.set(v))
+            self.window.portoptionmenu["menu"].add_command(
+                label=port, command=lambda v=port: self.om_variable.set(v)
+            )
 
     # =========================================================================
     # Changes the "good data received" indicator.
@@ -158,6 +176,7 @@ class LiveDataSource:
                 rawdata = self.ser.readline().decode("utf8").strip()
                 if len(rawdata) == 0:
                     continue
+                self.window.currentvalstringvar.set(str(rawdata))
                 if self.window.printrawdata is not None and self.window.printrawdata.get():
                     logger.info(rawdata)
                 l = rawdata.rfind(">")
@@ -181,7 +200,9 @@ class LiveDataSource:
                     logger.warning(f"Failed to convert {splits}")
                     self.setPackageIndicator("bad")
 
+                self.window.labels = ["one", "two"]
                 self.window.data.append(splits)
+
             except RuntimeError as e:
                 # This will happen when the main window is closed and this thread
                 # tries to access some of the gui elements that are no longer there
