@@ -5,6 +5,7 @@ The Tk code to plot live data
 """
 
 from argparse import Namespace
+import datetime
 import logging
 import matplotlib
 
@@ -34,7 +35,9 @@ class PlotterWindow:
         self.master.resizable(False, False)  # Prevent resizing
 
         # The data, kept up-to-date by the LiveDataSource
-        self.data = [[0 for i in range(args.max_inputs)] for i in range(args.max_points)]
+        self.queue = None
+        self.data = []
+        self.labels = []
 
         # set up a close window handler
         master.protocol("WM_DELETE_WINDOW", self.die)
@@ -43,7 +46,7 @@ class PlotterWindow:
         self.f1 = plt.figure(figsize=PLOTRATIO, dpi=PLOTDPI)
         self.a1 = self.f1.add_subplot(111)
         self.a1.grid()
-        self.a1.set_title("Serial Values")
+        self.a1.set_title("Data Values")
         self.a1.set_xticklabels([])
         self.canvas1 = FigureCanvasTkAgg(self.f1, master)
         self.canvas1.get_tk_widget().grid(row=0, column=0, columnspan=6, pady=20)
@@ -59,7 +62,9 @@ class PlotterWindow:
         self.portlabel.grid(row=3, column=0, sticky="W")
 
         self.serialconnectedstringvar = StringVar(master, value="Unconnected")
-        self.serialconnectedlabel = Label(master, textvar=self.serialconnectedstringvar, fg="red", width=15)
+        self.serialconnectedlabel = Label(
+            master, textvar=self.serialconnectedstringvar, fg="red", width=15
+        )
         self.serialconnectedlabel.grid(row=1, column=3)
 
         self.numinputslabel = Label(master, text="# Inputs")
@@ -73,7 +78,9 @@ class PlotterWindow:
         self.currentval.grid(row=2, column=5)
 
         self.packageindicator = StringVar(master, value="!")
-        self.packageindicatorlabel = Label(master, textvar=self.packageindicator, font=("times", 20, "bold"))
+        self.packageindicatorlabel = Label(
+            master, textvar=self.packageindicator, font=("times", 20, "bold")
+        )
         self.packageindicatorlabel.grid(row=4, column=5)
         self.packageindicator.set(".")
 
@@ -81,7 +88,11 @@ class PlotterWindow:
         available_ports = ["unk"]
         baud_rates = ["unk"]
         input_num_options = [str(x) for x in range(1, args.max_inputs + 1)]
-        plotmethods = ["Markers only", "Line only", "Both"]  # Various ways to display the plotted values
+        plotmethods = [
+            "Markers only",
+            "Line only",
+            "Both",
+        ]  # Various ways to display the plotted values
 
         # StringVars
         self.npointsentrystr = StringVar(master, value="250")
@@ -109,7 +120,9 @@ class PlotterWindow:
 
         # Buttons
         self.show_x_axis = IntVar(master, value=0)
-        self.showxaxischeckbutton = Checkbutton(master, text="Show y=0", variable=self.show_x_axis, onvalue=1, offvalue=0)
+        self.showxaxischeckbutton = Checkbutton(
+            master, text="Show y=0", variable=self.show_x_axis, onvalue=1, offvalue=0
+        )
         self.showxaxischeckbutton.grid(row=1, column=2)
 
         self.connectbutton = Button(master, text="Connect", command=None)
@@ -121,11 +134,13 @@ class PlotterWindow:
         self.refreshserialbutton = Button(master, text="Refresh Ports", command=None)
         self.refreshserialbutton.grid(row=3, column=2)
 
-        self.exportdatabutton = Button(master, text="Export", command=None)
+        self.exportdatabutton = Button(master, text="Export", command=self.exportData)
         self.exportdatabutton.grid(row=4, column=3)
 
         self.printrawdata = IntVar(master, value=0)
-        self.printrawbutton = Checkbutton(master, text="Print raw data", variable=self.printrawdata, onvalue=1, offvalue=0)
+        self.printrawbutton = Checkbutton(
+            master, text="Print raw data", variable=self.printrawdata, onvalue=1, offvalue=0
+        )
         self.printrawbutton.grid(row=2, column=2)
 
         self.requirebrackets = IntVar(master, value=1)
@@ -145,13 +160,40 @@ class PlotterWindow:
     # =====================================================================
     def die(self):
         logger.debug("Window closed")
-        sys.exit()
+        self.master.quit()
+        return
+
+    # =========================================================================
+    # Exports the data to a file associated with the current date and time.
+    def exportData(self):
+        timestamp = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
+        outfname = "SessionLogs/SerialSessionLog_%s.csv" % (timestamp)
+        try:
+            hit_data_start = False
+            f = open(outfname, "w")
+            for sd in self.serial_data:
+                # Check if we have data yet, don't start appending until that point
+                if not hit_data_start:
+                    if not any(sd):
+                        continue  # Skip to the next data point if all values are zeros
+                    else:
+                        hit_data_start = True
+
+                wstr = ""
+                for d in sd:
+                    wstr += "%f," % (d)
+                wstr = wstr[:-1] + "\n"
+                f.write(wstr)
+            f.close()
+            logger.info("Successfully exported to %s" % (outfname))
+        except:
+            logger.warning("Error: Unable to export data")
+        return
 
     # =========================================================================
     # Plots the data to the GUI's plot window.
     def plotline(self):
         numpoints = int(self.npointsentrystr.get())
-        numinputs = int(self.numinputsentrystr.get())
 
         if self.plotmethodentrystr.get() == "Markers only":
             plotmethod = "."
@@ -161,14 +203,12 @@ class PlotterWindow:
             plotmethod = ".-"
         self.a1.clear()
 
-        serial_plotline = self.data[-numpoints:]
-        for i in range(numinputs):  # Plot each line individually
-            plotline = [x[i] for x in serial_plotline]
-            self.a1.plot(plotline, plotmethod, label=str(i))
+        d = np.array(self.data[-numpoints:])
+        self.a1.plot(d, plotmethod, label=self.labels)
 
         self.a1.grid()
         if self.show_x_axis.get():
-            self.a1.set_ylim(0, 1.125 * np.amax(np.array(serial_data)))
+            self.a1.set_ylim(0, 1.125 * np.amax(d))
 
         # Plot formatting parameters
         ticklabels = np.linspace(numpoints / 10, 0, 5)
@@ -176,7 +216,6 @@ class PlotterWindow:
         self.a1.set_xticklabels([])
         self.a1.set_ylabel("Serial Value")
         self.a1.legend(loc=3)
-        self.a1.set_title("Serial Values")
 
         self.canvas1.draw()  # Actually update the GUI's canvas object
         # Schedule the next execution of plotter

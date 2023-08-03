@@ -21,9 +21,24 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 def main():
     parser = argparse.ArgumentParser(description="loranet bridge")
-    parser.add_argument("-v", "--verbose", action="count", default=0, help="Increase verbosity of outut")
-    parser.add_argument("--max-points", default=10000, help="Maximum number of points to store (default: %(default)s)")
-    parser.add_argument("--max-inputs", default=5, help="Maximum number of vars to plot (default: %(default)s)")
+    parser.add_argument(
+        "-v", "--verbose", action="count", default=0, help="Increase verbosity of outut"
+    )
+    parser.add_argument(
+        "--max-points",
+        default=10000,
+        help="Maximum number of points to store (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--max-inputs", default=5, help="Maximum number of vars to plot (default: %(default)s)"
+    )
+    parser.add_argument(
+        "-n",
+        "--no-connect",
+        default=False,
+        action="store_true",
+        help="Don't automatically connect to the first source found.",
+    )
     args = parser.parse_args()
 
     if args.verbose == 0:
@@ -33,15 +48,20 @@ def main():
     elif args.verbose > 1:
         level = logging.DEBUG
 
-    logging.basicConfig(format="%(asctime)s.%(msecs)03d: %(message)s", level=level, stream=sys.stdout, datefmt="%H:%M:%S")
+    logging.basicConfig(
+        format="%(asctime)s.%(msecs)03d: [%(threadName)s] %(message)s",
+        level=level,
+        stream=sys.stdout,
+        datefmt="%H:%M:%S",
+    )
 
     logger.debug("Running.")
 
     pw = PlotterWindow(args)
-    LiveDataSource(args, pw)
+    ld = LiveDataSource(args, pw)
     pw.mainloop()
-
     logger.debug("Quitting.")
+    ld.disconnectFromSerial()
 
 
 if __name__ == "__main__":
