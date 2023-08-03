@@ -2,4 +2,4 @@ black
 matplotlib
 numpy
 tk
-serial
+pyserial

@@ -6,20 +6,23 @@ some np arrays up-to-date and also provides some tk callbacks to configure it.
 It accepts data from either a serial port or from a udp socket.
 """
 from argparse import Namespace
-import datetime
+import asyncio
 import glob
 import logging
 import numpy as np
+import queue
 import serial
 import sys
+import threading
 
 logger = logging.getLogger(__name__)
 
 TIMEDELAY = 100  # Milliseconds between getting new data
 
 
-class LiveDataSource:
+class LiveDataSource():
     def __init__(self, args: Namespace, window):
+        super().__init__()
         self.ser = None
         self.master = window.master
         self.window = window
@@ -36,7 +39,10 @@ class LiveDataSource:
         self.window.connectbutton["command"] = self.connectToSerial
         self.window.disconnectbutton["command"] = self.disconnectFromSerial
         self.window.refreshserialbutton["command"] = self.refreshSerial
-        self.window.exportdatabutton["command"] = self.exportData
+
+        self.queue = queue.Queue()
+        self.window.queue = queue
+        self.io_thread = None
 
     # =============================================================================
     # This function comes graciously from StackOverflow
@@ -80,7 +86,7 @@ class LiveDataSource:
             port = self.window.portentrystr.get()
             baudrate = int(self.window.baudrateentrystr.get())
             logger.debug("Connecting to %s at %d" % (port, baudrate))
-            self.ser = serial.Serial(port, baudrate, timeout=0.1)
+            self.ser = serial.Serial(port, baudrate, timeout=1)
             self.ser.flushInput()
         except:
             logger.warn(f"Could not connect to {port}")
@@ -89,16 +95,21 @@ class LiveDataSource:
 
         self.IS_SERIAL_CONNECTED = True  # Set GUI state
         self.toggleSerialConnectedLabel(True)  # Show the state
-        self.getSerialValue()
         logger.debug("Connected")
+        self.io_thread = threading.Thread(target=self.run)
+        self.io_thread.start()
+        logger.debug(f"thread {self.io_thread.name} started")
 
     # =========================================================================
     # Disconnects from whatever serial port is currently active.
     def disconnectFromSerial(self):
+        logger.info("Disconnecting")
         if self.IS_SERIAL_CONNECTED:  # Only do this if already connected.
             self.ser.close()
             self.toggleSerialConnectedLabel(False)
             self.IS_SERIAL_CONNECTED = False
+        if self.io_thread is not None:
+            self.io_thread.join()
 
     # =========================================================================
     # Swap out the string label indicating whether serial is connected.
@@ -127,32 +138,6 @@ class LiveDataSource:
             logger.debug(f"Adding {port}")
             self.window.portoptionmenu["menu"].add_command(label=port, command=lambda v=port: self.om_variable.set(v))
 
-    # =========================================================================
-    # Exports the data to a file associated with the current date and time.
-    def exportData(self):
-        timestamp = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
-        outfname = "SessionLogs/SerialSessionLog_%s.csv" % (timestamp)
-        try:
-            hit_data_start = False
-            f = open(outfname, "w")
-            for sd in self.serial_data:
-                # Check if we have data yet, don't start appending until that point
-                if not hit_data_start:
-                    if not any(sd):
-                        continue  # Skip to the next data point if all values are zeros
-                    else:
-                        hit_data_start = True
-
-                wstr = ""
-                for d in sd:
-                    wstr += "%f," % (d)
-                wstr = wstr[:-1] + "\n"
-                f.write(wstr)
-            f.close()
-            logger.info("Successfully exported to %s" % (outfname))
-        except:
-            logger.warning("Error: Unable to export data")
-        return
 
     # =========================================================================
     # Changes the "good data received" indicator.
@@ -165,42 +150,32 @@ class LiveDataSource:
             self.window.packageindicatorlabel.config(fg="black", font=("times", 20, "bold"))
 
     # =========================================================================
-    # Gets the most recent serial value from connection. IMPORTANT.
-    def getSerialValue(self):
-        if not self.IS_SERIAL_CONNECTED:
-            logger.warning("No serial connection")
-            return
-
-        # Schedule the next execution of this function
-        self.master.after(TIMEDELAY, self.getSerialValue)
-
-        rawdata = self.ser.readline().decode("utf8").strip()
-        if len(rawdata) == 0:
-            return
-        if self.window.printrawdata.get():
-            logger.info(rawdata)
-        l = rawdata.rfind(">")
-        if l == -1:
-            logger.warning("No > delimiter")
-            self.setPackageIndicator("bad")
-            return
-        if self.window.requirebrackets.get():
-            r = rawdata.find("<")
-            if r == -1:
-                logger.warning("No < delimiter")
+    def run(self):
+        while self.IS_SERIAL_CONNECTED:
+            rawdata = self.ser.readline().decode("utf8").strip()
+            if len(rawdata) == 0:
+                continue
+            if self.window.printrawdata.get():
+                logger.info(rawdata)
+            l = rawdata.rfind(">")
+            if l == -1:
+                logger.warning("No > delimiter")
                 self.setPackageIndicator("bad")
-                return
-        else:
-            r = len(rawdata[l + 1 :])
-        splits = rawdata[l + 1 : r].split(" ")
-        logger.debug(f"splits:{splits}")
-        try:
-            splits = [float(v) for v in splits]
-        except ValueError:
-            logger.warning(f"Failed to convert {splits}")
-            self.setPackageIndicator("bad")
-            return
+                continue
+            if self.window.requirebrackets.get():
+                r = rawdata.find("<")
+                if r == -1:
+                    logger.warning("No < delimiter")
+                    self.setPackageIndicator("bad")
+                    continue
+            else:
+                r = len(rawdata[l + 1 :])
+            splits = rawdata[l + 1 : r].split(" ")
+            try:
+                splits = [float(v) for v in splits]
+                self.setPackageIndicator("good")
+            except ValueError:
+                logger.warning(f"Failed to convert {splits}")
+                self.setPackageIndicator("bad")
 
-        self.setPackageIndicator("good")
-
-        self.window.data.append(splits)
+            self.window.data.append(splits)

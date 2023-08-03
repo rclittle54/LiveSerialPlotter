@@ -5,6 +5,7 @@ The Tk code to plot live data
 """
 
 from argparse import Namespace
+import datetime
 import logging
 import matplotlib
 
@@ -34,6 +35,7 @@ class PlotterWindow:
         self.master.resizable(False, False)  # Prevent resizing
 
         # The data, kept up-to-date by the LiveDataSource
+        self.queue = None
         self.data = [[0 for i in range(args.max_inputs)] for i in range(args.max_points)]
 
         # set up a close window handler
@@ -121,7 +123,7 @@ class PlotterWindow:
         self.refreshserialbutton = Button(master, text="Refresh Ports", command=None)
         self.refreshserialbutton.grid(row=3, column=2)
 
-        self.exportdatabutton = Button(master, text="Export", command=None)
+        self.exportdatabutton = Button(master, text="Export", command=self.exportData)
         self.exportdatabutton.grid(row=4, column=3)
 
         self.printrawdata = IntVar(master, value=0)
@@ -145,7 +147,35 @@ class PlotterWindow:
     # =====================================================================
     def die(self):
         logger.debug("Window closed")
-        sys.exit()
+        self.master.quit()
+        return
+
+    # =========================================================================
+    # Exports the data to a file associated with the current date and time.
+    def exportData(self):
+        timestamp = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
+        outfname = "SessionLogs/SerialSessionLog_%s.csv" % (timestamp)
+        try:
+            hit_data_start = False
+            f = open(outfname, "w")
+            for sd in self.serial_data:
+                # Check if we have data yet, don't start appending until that point
+                if not hit_data_start:
+                    if not any(sd):
+                        continue  # Skip to the next data point if all values are zeros
+                    else:
+                        hit_data_start = True
+
+                wstr = ""
+                for d in sd:
+                    wstr += "%f," % (d)
+                wstr = wstr[:-1] + "\n"
+                f.write(wstr)
+            f.close()
+            logger.info("Successfully exported to %s" % (outfname))
+        except:
+            logger.warning("Error: Unable to export data")
+        return
 
     # =========================================================================
     # Plots the data to the GUI's plot window.

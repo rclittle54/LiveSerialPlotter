@@ -33,16 +33,15 @@ def main():
     elif args.verbose > 1:
         level = logging.DEBUG
 
-    logging.basicConfig(format="%(asctime)s.%(msecs)03d: %(message)s", level=level, stream=sys.stdout, datefmt="%H:%M:%S")
+    logging.basicConfig(format="%(asctime)s.%(msecs)03d: [%(threadName)s] %(message)s", level=level, stream=sys.stdout, datefmt="%H:%M:%S")
 
     logger.debug("Running.")
 
     pw = PlotterWindow(args)
-    LiveDataSource(args, pw)
+    ld = LiveDataSource(args, pw)
     pw.mainloop()
-
     logger.debug("Quitting.")
-
+    ld.disconnectFromSerial()
 
 if __name__ == "__main__":
     main()
